@@ -1,6 +1,5 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
   description: API specification
@@ -9,16 +8,15 @@ servers:
     description: Base API path
 tags:
   - name: health
-    description: Health operations
   - name: leaderboard
-    description: Leaderboard operations
+  - name: auth
+  - name: profile
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -31,7 +29,6 @@ paths:
       operationId: getLeaderboard
       tags: [leaderboard]
       summary: Get top leaderboard scores
-      description: Returns top scores sorted by best lap time or total race time
       parameters:
         - name: limit
           in: query
@@ -72,7 +69,7 @@ paths:
     get:
       operationId: getPersonalBest
       tags: [leaderboard]
-      summary: Get personal best score for a player name
+      summary: Get personal best for a player
       parameters:
         - name: playerName
           in: query
@@ -86,22 +83,127 @@ paths:
             type: string
       responses:
         "200":
-          description: Personal best entry or null
+          description: Personal best entry
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LeaderboardEntry"
         "404":
           description: No entry found
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthInput"
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "409":
+          description: Username taken
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthInput"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Validate token and get current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [profile]
+      summary: Get player profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Player profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerProfile"
+    patch:
+      operationId: updateProfile
+      tags: [profile]
+      summary: Update profile after a race
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdate"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerProfile"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
     LeaderboardEntry:
       type: object
       properties:
@@ -113,23 +215,14 @@ components:
           type: string
         totalTimeMs:
           type: integer
-          description: Total race time in milliseconds
         bestLapMs:
           type: integer
-          description: Best single lap time in milliseconds
         lapsCompleted:
           type: integer
         createdAt:
           type: string
           format: date-time
-      required:
-        - id
-        - playerName
-        - trackId
-        - totalTimeMs
-        - bestLapMs
-        - lapsCompleted
-        - createdAt
+      required: [id, playerName, trackId, totalTimeMs, bestLapMs, lapsCompleted, createdAt]
     ScoreInput:
       type: object
       properties:
@@ -145,9 +238,63 @@ components:
           type: integer
         lapsCompleted:
           type: integer
-      required:
-        - playerName
-        - trackId
-        - totalTimeMs
-        - bestLapMs
-        - lapsCompleted
+      required: [playerName, trackId, totalTimeMs, bestLapMs, lapsCompleted]
+    AuthInput:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 20
+        password:
+          type: string
+          minLength: 6
+      required: [username, password]
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        userId:
+          type: integer
+        username:
+          type: string
+      required: [token, userId, username]
+    PlayerProfile:
+      type: object
+      properties:
+        userId:
+          type: integer
+        username:
+          type: string
+        level:
+          type: integer
+        xp:
+          type: integer
+        totalRaces:
+          type: integer
+        personalBests:
+          type: object
+          additionalProperties:
+            type: integer
+      required: [userId, username, level, xp, totalRaces, personalBests]
+    ProfileUpdate:
+      type: object
+      properties:
+        xpGained:
+          type: integer
+        trackId:
+          type: string
+        bestLapMs:
+          type: integer
+        totalTimeMs:
+          type: integer
+        lapsCompleted:
+          type: integer
+      required: [xpGained, trackId, bestLapMs, totalTimeMs, lapsCompleted]
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]

@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { useGetLeaderboard } from "@workspace/api-client-react";
 import { TRACKS, DIFFICULTY_COLOR } from "@/game/trackData";
-import { usePlayerProfile, getLevelProgress, LEVEL_TITLES } from "@/game/usePlayerProfile";
+import { useAuth } from "@/auth/AuthContext";
+import { getLevelProgress, LEVEL_TITLES } from "@/game/usePlayerProfile";
 
 function formatTime(ms: number): string {
   if (!ms || ms <= 0) return "--:--.---";
@@ -14,14 +15,15 @@ function formatTime(ms: number): string {
 
 export default function Menu() {
   const [, setLocation] = useLocation();
-  const [playerName, setPlayerName] = useState("");
   const [selectedTrack, setSelectedTrack] = useState(TRACKS[0].id);
-  const { profile } = usePlayerProfile();
+  const { user, profile, logout } = useAuth();
 
   const track = TRACKS.find((t) => t.id === selectedTrack) ?? TRACKS[0];
   const neon = track.neonColor;
-  const { progress: xpProgress } = getLevelProgress(profile);
-  const levelTitle = LEVEL_TITLES[profile.level] ?? "Rookie";
+
+  const playerLevel = profile?.level ?? 1;
+  const xpProgress = profile ? getLevelProgress(profile).progress : 0;
+  const levelTitle = LEVEL_TITLES[playerLevel] ?? "Rookie";
 
   const { data: leaderboard, isLoading } = useGetLeaderboard({
     trackId: selectedTrack,
@@ -29,11 +31,10 @@ export default function Menu() {
   });
 
   const handleStart = () => {
-    if (!playerName.trim()) return;
     const t = TRACKS.find((t) => t.id === selectedTrack)!;
-    if (t.unlockLevel > profile.level) return;
+    if (t.unlockLevel > playerLevel) return;
     setLocation(
-      `/race?track=${encodeURIComponent(selectedTrack)}&player=${encodeURIComponent(playerName.trim())}`
+      `/race?track=${encodeURIComponent(selectedTrack)}&player=${encodeURIComponent(user?.username ?? "Racer")}`
     );
   };
 
@@ -66,13 +67,13 @@ export default function Menu() {
             style={{ background: `${neon}20`, border: `2px solid ${neon}60` }}
           >
             <span className="text-xs text-gray-400 uppercase" style={{ fontSize: "9px", letterSpacing: "0.1em" }}>LVL</span>
-            <span className="text-2xl leading-tight" style={{ color: neon }}>{profile.level}</span>
+            <span className="text-2xl leading-tight" style={{ color: neon }}>{playerLevel}</span>
           </div>
 
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline justify-between mb-1">
-              <span className="text-white font-bold text-sm">{levelTitle}</span>
-              <span className="text-gray-500 text-xs">{profile.xp} XP</span>
+              <span className="text-white font-bold text-sm">{user?.username ?? "Pilot"} — {levelTitle}</span>
+              <span className="text-gray-500 text-xs">{profile?.xp ?? 0} XP</span>
             </div>
             {/* XP progress bar */}
             <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
@@ -86,12 +87,20 @@ export default function Menu() {
               />
             </div>
             <div className="flex justify-between mt-1">
-              <span className="text-gray-500 text-xs">{profile.totalRaces} races</span>
+              <span className="text-gray-500 text-xs">{profile?.totalRaces ?? 0} races</span>
               <span className="text-xs" style={{ color: neon + "99" }}>
-                {profile.level < 20 ? `Next level: ${Math.round(xpProgress * 100)}%` : "MAX LEVEL"}
+                {playerLevel < 20 ? `Next level: ${Math.round(xpProgress * 100)}%` : "MAX LEVEL"}
               </span>
             </div>
           </div>
+
+          <button
+            onClick={logout}
+            className="text-xs uppercase tracking-widest px-3 py-2 rounded-lg transition-colors flex-shrink-0"
+            style={{ color: "rgba(255,255,255,0.3)", border: "1px solid rgba(255,255,255,0.1)" }}
+          >
+            Logout
+          </button>
         </div>
 
         {/* Title */}
@@ -105,31 +114,12 @@ export default function Menu() {
           <p className="text-gray-400 text-xs uppercase tracking-widest">Futuristic Racing</p>
         </div>
 
-        {/* Pilot name */}
-        <div className="flex flex-col gap-2">
-          <label className="text-xs text-gray-400 uppercase tracking-widest">Pilot Name</label>
-          <input
-            data-testid="input-player-name"
-            value={playerName}
-            onChange={(e) => setPlayerName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleStart()}
-            placeholder="Enter your name..."
-            maxLength={20}
-            className="px-5 py-3 rounded-xl text-white font-bold text-lg outline-none transition-all placeholder:text-gray-600"
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              border: `1px solid ${neon}50`,
-              boxShadow: playerName ? `0 0 15px ${neon}20` : "none",
-            }}
-          />
-        </div>
-
         {/* Track selection */}
         <div className="flex flex-col gap-3">
           <label className="text-xs text-gray-400 uppercase tracking-widest">Select Track</label>
           <div className="grid grid-cols-2 gap-3">
             {TRACKS.map((t) => {
-              const locked = t.unlockLevel > profile.level;
+              const locked = t.unlockLevel > playerLevel;
               const isSelected = selectedTrack === t.id;
               const diffColor = DIFFICULTY_COLOR[t.difficulty];
               return (
@@ -149,7 +139,6 @@ export default function Menu() {
                     cursor: locked ? "not-allowed" : "pointer",
                   }}
                 >
-                  {/* Lock overlay */}
                   {locked && (
                     <div className="absolute inset-0 flex items-center justify-center rounded-xl"
                       style={{ background: "rgba(0,0,0,0.5)" }}>
@@ -181,13 +170,13 @@ export default function Menu() {
         <button
           data-testid="button-start-race"
           onClick={handleStart}
-          disabled={!playerName.trim() || (TRACKS.find(t => t.id === selectedTrack)?.unlockLevel ?? 1) > profile.level}
+          disabled={(TRACKS.find(t => t.id === selectedTrack)?.unlockLevel ?? 1) > playerLevel}
           className="py-4 rounded-xl font-black text-xl uppercase tracking-widest transition-all"
           style={{
-            background: playerName.trim() ? neon : "rgba(255,255,255,0.1)",
-            color: playerName.trim() ? "#000" : "rgba(255,255,255,0.3)",
-            boxShadow: playerName.trim() ? `0 0 30px ${neon}60` : "none",
-            cursor: playerName.trim() ? "pointer" : "not-allowed",
+            background: neon,
+            color: "#000",
+            boxShadow: `0 0 30px ${neon}60`,
+            cursor: "pointer",
           }}
         >
           Start Race

@@ -13,9 +13,7 @@ export interface LeaderboardEntry {
   id: number;
   playerName: string;
   trackId: string;
-  /** Total race time in milliseconds */
   totalTimeMs: number;
-  /** Best single lap time in milliseconds */
   bestLapMs: number;
   lapsCompleted: number;
   createdAt: string;
@@ -31,6 +29,45 @@ export interface ScoreInput {
   totalTimeMs: number;
   bestLapMs: number;
   lapsCompleted: number;
+}
+
+export interface AuthInput {
+  /**
+     * @minLength 3
+     * @maxLength 20
+     */
+  username: string;
+  /** @minLength 6 */
+  password: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  userId: number;
+  username: string;
+}
+
+export type PlayerProfilePersonalBests = {[key: string]: number};
+
+export interface PlayerProfile {
+  userId: number;
+  username: string;
+  level: number;
+  xp: number;
+  totalRaces: number;
+  personalBests: PlayerProfilePersonalBests;
+}
+
+export interface ProfileUpdate {
+  xpGained: number;
+  trackId: string;
+  bestLapMs: number;
+  totalTimeMs: number;
+  lapsCompleted: number;
+}
+
+export interface ErrorResponse {
+  error: string;
 }
 
 export type GetLeaderboardParams = {

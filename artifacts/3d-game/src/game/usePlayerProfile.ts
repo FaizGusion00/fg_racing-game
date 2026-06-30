@@ -5,7 +5,6 @@ export interface PlayerProfile {
   xp: number;
   totalRaces: number;
   personalBests: Record<string, number>; // trackId -> bestLapMs
-  totalWins: number;
 }
 
 const STORAGE_KEY = "apex-rush-profile";
@@ -46,7 +45,6 @@ function defaultProfile(): PlayerProfile {
     xp: 0,
     totalRaces: 0,
     personalBests: {},
-    totalWins: 0,
   };
 }
 

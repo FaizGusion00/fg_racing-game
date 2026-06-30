@@ -1,7 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { Canvas } from "@react-three/fiber";
 import { KeyboardControls, Stars } from "@react-three/drei";
-import * as THREE from "three";
 import { useLocation, useSearch } from "wouter";
 import { useSubmitScore } from "@workspace/api-client-react";
 import Track from "@/game/Track";
@@ -10,7 +9,10 @@ import BoostPads from "@/game/BoostPad";
 import GameHUD from "@/game/GameHUD";
 import { useRaceState } from "@/game/useRaceState";
 import { getTrackById, TOTAL_LAPS } from "@/game/trackData";
-import { usePlayerProfile, getLevelProgress, LEVEL_TITLES } from "@/game/usePlayerProfile";
+import { useAuth } from "@/auth/AuthContext";
+import { computeXpReward, LEVEL_TITLES, getLevelProgress } from "@/game/usePlayerProfile";
+import type { PlayerProfile } from "@/auth/AuthContext";
+import * as THREE from "three";
 
 enum Controls {
   forward = "forward",
@@ -46,14 +48,14 @@ export default function Race() {
   const [carTDisplay, setCarTDisplay] = useState(0);
   const raceState = useRaceState();
   const submitScore = useSubmitScore();
-  const { profile, awardXp } = usePlayerProfile();
+  const { profile, user, updateProfileAfterRace } = useAuth();
 
   const [totalTimeSample, setTotalTimeSample] = useState(0);
   const [currentLapSample, setCurrentLapSample] = useState(0);
   const [showFinish, setShowFinish] = useState(false);
-  const [playerNameInput, setPlayerNameInput] = useState(playerName);
   const [submitted, setSubmitted] = useState(false);
-  const [xpReward, setXpReward] = useState<{ xpGained: number; leveledUp: boolean; newLevel: number; personalBest: boolean } | null>(null);
+  const [updatedProfile, setUpdatedProfile] = useState<PlayerProfile | null>(null);
+  const [xpReward, setXpReward] = useState<{ xpGained: number; leveledUp: boolean; personalBest: boolean } | null>(null);
 
   useEffect(() => {
     raceState.startCountdown();
@@ -74,13 +76,35 @@ export default function Race() {
   useEffect(() => {
     if (raceState.phase === "finished") {
       setShowFinish(true);
-      // Award XP immediately on finish
       const totalMs = raceState.lapTimes.reduce((a, b) => a + b, 0);
       const bestMs = raceState.getBestLapMs(raceState.lapTimes);
-      const { xpGained, leveledUp, personalBestBeaten } = awardXp(
-        trackId, bestMs, totalMs, raceState.lapTimes.length, TOTAL_LAPS
+
+      // Compute local XP reward
+      const fakeProfile = {
+        level: profile?.level ?? 1,
+        xp: profile?.xp ?? 0,
+        totalRaces: profile?.totalRaces ?? 0,
+        personalBests: profile?.personalBests ?? {},
+      };
+      const { xpGained, personalBestBeaten } = computeXpReward(
+        fakeProfile, trackId, bestMs, totalMs, raceState.lapTimes.length, TOTAL_LAPS
       );
-      setXpReward({ xpGained, leveledUp, newLevel: profile.level + (leveledUp ? 1 : 0), personalBest: personalBestBeaten });
+      setXpReward({ xpGained, leveledUp: false, personalBest: personalBestBeaten });
+
+      // Save to server
+      updateProfileAfterRace({
+        xpGained,
+        trackId,
+        bestLapMs: bestMs,
+        totalTimeMs: totalMs,
+        lapsCompleted: raceState.lapTimes.length,
+      }).then((updated) => {
+        if (updated) {
+          setUpdatedProfile(updated);
+          const didLevelUp = updated.level > (profile?.level ?? 1);
+          setXpReward((prev) => prev ? { ...prev, leveledUp: didLevelUp } : null);
+        }
+      });
     }
   }, [raceState.phase]);
 
@@ -94,7 +118,7 @@ export default function Race() {
     submitScore.mutate(
       {
         data: {
-          playerName: playerNameInput.trim() || "Racer",
+          playerName: user?.username ?? playerName,
           trackId,
           totalTimeMs: totalMs,
           bestLapMs: bestMs,
@@ -103,10 +127,11 @@ export default function Race() {
       },
       { onSuccess: () => setSubmitted(true) }
     );
-  }, [raceState, playerNameInput, trackId, submitScore]);
+  }, [raceState, playerName, trackId, submitScore, user]);
 
   const neon = track.neonColor;
-  const { progress: xpProgress } = getLevelProgress(profile);
+  const displayProfile = updatedProfile ?? profile;
+  const xpProgress = displayProfile ? getLevelProgress(displayProfile).progress : 0;
 
   return (
     <div className="w-full h-screen relative bg-black overflow-hidden">
@@ -117,16 +142,11 @@ export default function Race() {
           gl={{ antialias: true }}
           style={{ width: "100%", height: "100%" }}
         >
-          <color attach="background" args={[track.fogColor]} />
+          <color attach="background" args={[track.fogColor as THREE.ColorRepresentation]} />
           <fog attach="fog" args={[track.fogColor, track.fogNear, track.fogFar]} />
 
           <ambientLight intensity={0.2} />
-          <directionalLight
-            position={[50, 80, 50]}
-            intensity={0.9}
-            castShadow
-            shadow-mapSize={[2048, 2048]}
-          />
+          <directionalLight position={[50, 80, 50]} intensity={0.9} castShadow shadow-mapSize={[2048, 2048]} />
           <pointLight position={[0, 30, 0]} intensity={2.5} color={neon} distance={220} />
 
           <Stars radius={220} depth={60} count={4000} factor={4} fade />
@@ -148,12 +168,11 @@ export default function Race() {
             onSpeedChange={raceState.setSpeed}
             carTRef={carTRef}
             onBoostTick={raceState.tickBoost}
-            playerLevel={profile.level}
+            playerLevel={profile?.level ?? 1}
           />
         </Canvas>
       </KeyboardControls>
 
-      {/* HUD */}
       <GameHUD
         phase={raceState.phase}
         countdown={raceState.countdown}
@@ -165,36 +184,28 @@ export default function Race() {
         lapTimes={raceState.lapTimes}
         track={track}
         carT={carTDisplay}
-        playerLevel={profile.level}
+        playerLevel={profile?.level ?? 1}
       />
 
       {/* Race finished overlay */}
       {showFinish && (
-        <div
-          className="absolute inset-0 flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.88)", zIndex: 20 }}
-        >
+        <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.88)", zIndex: 20 }}>
           <div
-            className="w-full max-w-md p-8 rounded-2xl flex flex-col gap-5"
+            className="w-full max-w-md p-8 rounded-2xl flex flex-col gap-5 overflow-y-auto"
             style={{
               background: "rgba(5,10,30,0.97)",
               border: `2px solid ${neon}`,
               boxShadow: `0 0 40px ${neon}40`,
+              maxHeight: "90vh",
             }}
           >
-            <h2
-              className="text-3xl font-black text-center uppercase tracking-widest"
-              style={{ color: neon, textShadow: `0 0 20px ${neon}` }}
-            >
+            <h2 className="text-3xl font-black text-center uppercase tracking-widest" style={{ color: neon, textShadow: `0 0 20px ${neon}` }}>
               Race Complete
             </h2>
 
             {/* XP reward banner */}
             {xpReward && (
-              <div
-                className="rounded-xl p-4 flex flex-col gap-2"
-                style={{ background: `${neon}18`, border: `1px solid ${neon}50` }}
-              >
+              <div className="rounded-xl p-4 flex flex-col gap-2" style={{ background: `${neon}18`, border: `1px solid ${neon}50` }}>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-black uppercase tracking-widest" style={{ color: neon }}>
                     +{xpReward.xpGained} XP Earned
@@ -205,15 +216,14 @@ export default function Race() {
                     </span>
                   )}
                 </div>
-                {xpReward.leveledUp && (
+                {xpReward.leveledUp && displayProfile && (
                   <div className="text-center font-black text-lg" style={{ color: "#ffdd00", textShadow: "0 0 20px #ffdd00" }}>
-                    ⚡ LEVEL UP! → Level {profile.level}
+                    ⚡ LEVEL UP! → Level {displayProfile.level} — {LEVEL_TITLES[displayProfile.level]}
                   </div>
                 )}
-                {/* Progress bar */}
                 <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.1)" }}>
                   <div
-                    className="h-full rounded-full"
+                    className="h-full rounded-full transition-all duration-1000"
                     style={{
                       width: `${Math.round(xpProgress * 100)}%`,
                       background: `linear-gradient(90deg, ${neon}80, ${neon})`,
@@ -222,7 +232,7 @@ export default function Race() {
                   />
                 </div>
                 <div className="text-xs text-center" style={{ color: neon + "88" }}>
-                  Level {profile.level} — {LEVEL_TITLES[profile.level]}
+                  Level {displayProfile?.level ?? 1} · {LEVEL_TITLES[displayProfile?.level ?? 1]}
                 </div>
               </div>
             )}
@@ -250,29 +260,18 @@ export default function Race() {
             )}
 
             {!submitted ? (
-              <div className="flex flex-col gap-3">
-                <label className="text-xs text-gray-400 uppercase tracking-widest">Your Name</label>
-                <input
-                  data-testid="input-player-name"
-                  value={playerNameInput}
-                  onChange={(e) => setPlayerNameInput(e.target.value)}
-                  maxLength={20}
-                  className="px-4 py-2 rounded-lg text-white font-bold text-center outline-none"
-                  style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${neon}60` }}
-                />
-                <button
-                  data-testid="button-submit-score"
-                  onClick={handleSubmit}
-                  disabled={submitScore.isPending}
-                  className="py-3 rounded-xl font-black uppercase tracking-widest text-black transition-all"
-                  style={{ background: neon, opacity: submitScore.isPending ? 0.6 : 1 }}
-                >
-                  {submitScore.isPending ? "Submitting..." : "Submit Score"}
-                </button>
-              </div>
+              <button
+                data-testid="button-submit-score"
+                onClick={handleSubmit}
+                disabled={submitScore.isPending}
+                className="py-3 rounded-xl font-black uppercase tracking-widest text-black transition-all"
+                style={{ background: neon, opacity: submitScore.isPending ? 0.6 : 1 }}
+              >
+                {submitScore.isPending ? "Submitting..." : "Submit to Leaderboard"}
+              </button>
             ) : (
-              <div className="text-center font-bold" style={{ color: neon }}>
-                ✓ Score Submitted to Leaderboard
+              <div className="text-center font-bold py-2" style={{ color: neon }}>
+                ✓ Score Submitted
               </div>
             )}
 
@@ -283,6 +282,7 @@ export default function Race() {
                   setShowFinish(false);
                   setSubmitted(false);
                   setXpReward(null);
+                  setUpdatedProfile(null);
                   carTRef.current = 0;
                   raceState.startCountdown();
                 }}

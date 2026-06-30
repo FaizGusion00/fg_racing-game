@@ -6,8 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './authInput';
+export * from './authResponse';
+export * from './errorResponse';
 export * from './getLeaderboardParams';
 export * from './getPersonalBestParams';
 export * from './healthStatus';
 export * from './leaderboardEntry';
+export * from './playerProfile';
+export * from './playerProfilePersonalBests';
+export * from './profileUpdate';
 export * from './scoreInput';

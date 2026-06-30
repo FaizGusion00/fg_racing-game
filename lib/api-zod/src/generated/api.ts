@@ -9,7 +9,6 @@ import * as zod from 'zod';
 
 
 /**
- * Returns server health status
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -18,7 +17,6 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
- * Returns top scores sorted by best lap time or total race time
  * @summary Get top leaderboard scores
  */
 export const getLeaderboardQueryLimitDefault = 10;
@@ -32,8 +30,8 @@ export const GetLeaderboardResponseItem = zod.object({
   "id": zod.number(),
   "playerName": zod.string(),
   "trackId": zod.string(),
-  "totalTimeMs": zod.number().describe('Total race time in milliseconds'),
-  "bestLapMs": zod.number().describe('Best single lap time in milliseconds'),
+  "totalTimeMs": zod.number(),
+  "bestLapMs": zod.number(),
   "lapsCompleted": zod.number(),
   "createdAt": zod.coerce.date()
 })
@@ -59,15 +57,15 @@ export const SubmitScoreResponse = zod.object({
   "id": zod.number(),
   "playerName": zod.string(),
   "trackId": zod.string(),
-  "totalTimeMs": zod.number().describe('Total race time in milliseconds'),
-  "bestLapMs": zod.number().describe('Best single lap time in milliseconds'),
+  "totalTimeMs": zod.number(),
+  "bestLapMs": zod.number(),
   "lapsCompleted": zod.number(),
   "createdAt": zod.coerce.date()
 })
 
 
 /**
- * @summary Get personal best score for a player name
+ * @summary Get personal best for a player
  */
 export const GetPersonalBestQueryParams = zod.object({
   "playerName": zod.coerce.string(),
@@ -78,10 +76,98 @@ export const GetPersonalBestResponse = zod.object({
   "id": zod.number(),
   "playerName": zod.string(),
   "trackId": zod.string(),
-  "totalTimeMs": zod.number().describe('Total race time in milliseconds'),
-  "bestLapMs": zod.number().describe('Best single lap time in milliseconds'),
+  "totalTimeMs": zod.number(),
+  "bestLapMs": zod.number(),
   "lapsCompleted": zod.number(),
   "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Register a new account
+ */
+export const registerBodyUsernameMin = 3;
+export const registerBodyUsernameMax = 20;
+
+export const registerBodyPasswordMin = 6;
+
+
+
+export const RegisterBody = zod.object({
+  "username": zod.string().min(registerBodyUsernameMin).max(registerBodyUsernameMax),
+  "password": zod.string().min(registerBodyPasswordMin)
+})
+
+export const RegisterResponse = zod.object({
+  "token": zod.string(),
+  "userId": zod.number(),
+  "username": zod.string()
+})
+
+
+/**
+ * @summary Login
+ */
+export const loginBodyUsernameMin = 3;
+export const loginBodyUsernameMax = 20;
+
+export const loginBodyPasswordMin = 6;
+
+
+
+export const LoginBody = zod.object({
+  "username": zod.string().min(loginBodyUsernameMin).max(loginBodyUsernameMax),
+  "password": zod.string().min(loginBodyPasswordMin)
+})
+
+export const LoginResponse = zod.object({
+  "token": zod.string(),
+  "userId": zod.number(),
+  "username": zod.string()
+})
+
+
+/**
+ * @summary Validate token and get current user
+ */
+export const GetMeResponse = zod.object({
+  "token": zod.string(),
+  "userId": zod.number(),
+  "username": zod.string()
+})
+
+
+/**
+ * @summary Get player profile
+ */
+export const GetProfileResponse = zod.object({
+  "userId": zod.number(),
+  "username": zod.string(),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "totalRaces": zod.number(),
+  "personalBests": zod.record(zod.string(), zod.number())
+})
+
+
+/**
+ * @summary Update profile after a race
+ */
+export const UpdateProfileBody = zod.object({
+  "xpGained": zod.number(),
+  "trackId": zod.string(),
+  "bestLapMs": zod.number(),
+  "totalTimeMs": zod.number(),
+  "lapsCompleted": zod.number()
+})
+
+export const UpdateProfileResponse = zod.object({
+  "userId": zod.number(),
+  "username": zod.string(),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "totalRaces": zod.number(),
+  "personalBests": zod.record(zod.string(), zod.number())
 })
 
 

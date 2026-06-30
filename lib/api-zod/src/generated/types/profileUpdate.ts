@@ -6,12 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface LeaderboardEntry {
-  id: number;
-  playerName: string;
+export interface ProfileUpdate {
+  xpGained: number;
   trackId: string;
-  totalTimeMs: number;
   bestLapMs: number;
+  totalTimeMs: number;
   lapsCompleted: number;
-  createdAt: Date;
 }
