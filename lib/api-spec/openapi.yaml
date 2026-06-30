@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: leaderboard
+    description: Leaderboard operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,73 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /leaderboard:
+    get:
+      operationId: getLeaderboard
+      tags: [leaderboard]
+      summary: Get top leaderboard scores
+      description: Returns top scores sorted by best lap time or total race time
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: trackId
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: Leaderboard entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaderboardEntry"
+    post:
+      operationId: submitScore
+      tags: [leaderboard]
+      summary: Submit a race score
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScoreInput"
+      responses:
+        "201":
+          description: Score submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaderboardEntry"
+  /leaderboard/personal-best:
+    get:
+      operationId: getPersonalBest
+      tags: [leaderboard]
+      summary: Get personal best score for a player name
+      parameters:
+        - name: playerName
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: trackId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Personal best entry or null
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaderboardEntry"
+        "404":
+          description: No entry found
 components:
   schemas:
     HealthStatus:
@@ -33,4 +102,52 @@ components:
           type: string
       required:
         - status
-
+    LeaderboardEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        playerName:
+          type: string
+        trackId:
+          type: string
+        totalTimeMs:
+          type: integer
+          description: Total race time in milliseconds
+        bestLapMs:
+          type: integer
+          description: Best single lap time in milliseconds
+        lapsCompleted:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - playerName
+        - trackId
+        - totalTimeMs
+        - bestLapMs
+        - lapsCompleted
+        - createdAt
+    ScoreInput:
+      type: object
+      properties:
+        playerName:
+          type: string
+          minLength: 1
+          maxLength: 20
+        trackId:
+          type: string
+        totalTimeMs:
+          type: integer
+        bestLapMs:
+          type: integer
+        lapsCompleted:
+          type: integer
+      required:
+        - playerName
+        - trackId
+        - totalTimeMs
+        - bestLapMs
+        - lapsCompleted
