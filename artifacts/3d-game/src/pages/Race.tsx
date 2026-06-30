@@ -8,8 +8,9 @@ import Track from "@/game/Track";
 import Car from "@/game/Car";
 import BoostPads from "@/game/BoostPad";
 import GameHUD from "@/game/GameHUD";
-import { useRaceState, GamePhase } from "@/game/useRaceState";
+import { useRaceState } from "@/game/useRaceState";
 import { getTrackById, TOTAL_LAPS } from "@/game/trackData";
+import { usePlayerProfile, getLevelProgress, LEVEL_TITLES } from "@/game/usePlayerProfile";
 
 enum Controls {
   forward = "forward",
@@ -45,20 +46,19 @@ export default function Race() {
   const [carTDisplay, setCarTDisplay] = useState(0);
   const raceState = useRaceState();
   const submitScore = useSubmitScore();
+  const { profile, awardXp } = usePlayerProfile();
 
   const [totalTimeSample, setTotalTimeSample] = useState(0);
   const [currentLapSample, setCurrentLapSample] = useState(0);
   const [showFinish, setShowFinish] = useState(false);
   const [playerNameInput, setPlayerNameInput] = useState(playerName);
   const [submitted, setSubmitted] = useState(false);
-  const animFrame = useRef<number>(0);
+  const [xpReward, setXpReward] = useState<{ xpGained: number; leveledUp: boolean; newLevel: number; personalBest: boolean } | null>(null);
 
-  // Start countdown on mount
   useEffect(() => {
     raceState.startCountdown();
   }, []);
 
-  // UI clock — update HUD every animation frame
   useEffect(() => {
     let id: number;
     const tick = () => {
@@ -71,15 +71,21 @@ export default function Race() {
     return () => cancelAnimationFrame(id);
   }, [raceState]);
 
-  // Show finish overlay when race done
   useEffect(() => {
     if (raceState.phase === "finished") {
       setShowFinish(true);
+      // Award XP immediately on finish
+      const totalMs = raceState.lapTimes.reduce((a, b) => a + b, 0);
+      const bestMs = raceState.getBestLapMs(raceState.lapTimes);
+      const { xpGained, leveledUp, personalBestBeaten } = awardXp(
+        trackId, bestMs, totalMs, raceState.lapTimes.length, TOTAL_LAPS
+      );
+      setXpReward({ xpGained, leveledUp, newLevel: profile.level + (leveledUp ? 1 : 0), personalBest: personalBestBeaten });
     }
   }, [raceState.phase]);
 
   const handleLapComplete = useCallback(() => {
-    const isFinished = raceState.completeLap();
+    raceState.completeLap();
   }, [raceState]);
 
   const handleSubmit = useCallback(() => {
@@ -95,38 +101,35 @@ export default function Race() {
           lapsCompleted: raceState.lapTimes.length,
         },
       },
-      {
-        onSuccess: () => {
-          setSubmitted(true);
-        },
-      }
+      { onSuccess: () => setSubmitted(true) }
     );
   }, [raceState, playerNameInput, trackId, submitScore]);
 
   const neon = track.neonColor;
+  const { progress: xpProgress } = getLevelProgress(profile);
 
   return (
     <div className="w-full h-screen relative bg-black overflow-hidden">
       <KeyboardControls map={KEY_MAP}>
         <Canvas
           shadows
-          camera={{ fov: 75, near: 0.1, far: 2000, position: [0, 12, 20] }}
+          camera={{ fov: 72, near: 0.1, far: 2000, position: [0, 12, 20] }}
           gl={{ antialias: true }}
           style={{ width: "100%", height: "100%" }}
         >
           <color attach="background" args={[track.fogColor]} />
-          <fog attach="fog" args={[track.fogColor, 80, 350]} />
+          <fog attach="fog" args={[track.fogColor, track.fogNear, track.fogFar]} />
 
-          <ambientLight intensity={0.25} />
+          <ambientLight intensity={0.2} />
           <directionalLight
             position={[50, 80, 50]}
-            intensity={0.8}
+            intensity={0.9}
             castShadow
             shadow-mapSize={[2048, 2048]}
           />
-          <pointLight position={[0, 30, 0]} intensity={2} color={neon} distance={200} />
+          <pointLight position={[0, 30, 0]} intensity={2.5} color={neon} distance={220} />
 
-          <Stars radius={200} depth={60} count={3000} factor={4} fade />
+          <Stars radius={220} depth={60} count={4000} factor={4} fade />
 
           <Track track={track} groundColor={track.groundColor} />
 
@@ -145,6 +148,7 @@ export default function Race() {
             onSpeedChange={raceState.setSpeed}
             carTRef={carTRef}
             onBoostTick={raceState.tickBoost}
+            playerLevel={profile.level}
           />
         </Canvas>
       </KeyboardControls>
@@ -161,16 +165,17 @@ export default function Race() {
         lapTimes={raceState.lapTimes}
         track={track}
         carT={carTDisplay}
+        playerLevel={profile.level}
       />
 
       {/* Race finished overlay */}
       {showFinish && (
         <div
           className="absolute inset-0 flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.85)", zIndex: 20 }}
+          style={{ background: "rgba(0,0,0,0.88)", zIndex: 20 }}
         >
           <div
-            className="w-full max-w-md p-8 rounded-2xl flex flex-col gap-6"
+            className="w-full max-w-md p-8 rounded-2xl flex flex-col gap-5"
             style={{
               background: "rgba(5,10,30,0.97)",
               border: `2px solid ${neon}`,
@@ -184,7 +189,45 @@ export default function Race() {
               Race Complete
             </h2>
 
-            <div className="grid grid-cols-2 gap-4">
+            {/* XP reward banner */}
+            {xpReward && (
+              <div
+                className="rounded-xl p-4 flex flex-col gap-2"
+                style={{ background: `${neon}18`, border: `1px solid ${neon}50` }}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-black uppercase tracking-widest" style={{ color: neon }}>
+                    +{xpReward.xpGained} XP Earned
+                  </span>
+                  {xpReward.personalBest && (
+                    <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: "#ffcc0022", color: "#ffcc00", border: "1px solid #ffcc0060" }}>
+                      🏆 Personal Best!
+                    </span>
+                  )}
+                </div>
+                {xpReward.leveledUp && (
+                  <div className="text-center font-black text-lg" style={{ color: "#ffdd00", textShadow: "0 0 20px #ffdd00" }}>
+                    ⚡ LEVEL UP! → Level {profile.level}
+                  </div>
+                )}
+                {/* Progress bar */}
+                <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.1)" }}>
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${Math.round(xpProgress * 100)}%`,
+                      background: `linear-gradient(90deg, ${neon}80, ${neon})`,
+                      boxShadow: `0 0 8px ${neon}80`,
+                    }}
+                  />
+                </div>
+                <div className="text-xs text-center" style={{ color: neon + "88" }}>
+                  Level {profile.level} — {LEVEL_TITLES[profile.level]}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
               <Stat label="Total Time" value={formatTime(raceState.lapTimes.reduce((a, b) => a + b, 0))} neon={neon} />
               <Stat label="Best Lap" value={formatTime(raceState.getBestLapMs(raceState.lapTimes))} neon={neon} />
               <Stat label="Laps" value={`${raceState.lapTimes.length} / ${TOTAL_LAPS}`} neon={neon} />
@@ -193,13 +236,16 @@ export default function Race() {
 
             {raceState.lapTimes.length > 0 && (
               <div className="flex flex-col gap-1">
-                {raceState.lapTimes.map((t, i) => (
-                  <div key={i} className="flex justify-between text-sm font-mono"
-                    style={{ color: i === raceState.lapTimes.indexOf(Math.min(...raceState.lapTimes)) ? "#ffdd00" : "rgba(255,255,255,0.6)" }}>
-                    <span>Lap {i + 1}</span>
-                    <span>{formatTime(t)}</span>
-                  </div>
-                ))}
+                {raceState.lapTimes.map((t, i) => {
+                  const bestIdx = raceState.lapTimes.indexOf(Math.min(...raceState.lapTimes));
+                  return (
+                    <div key={i} className="flex justify-between text-sm font-mono"
+                      style={{ color: i === bestIdx ? "#ffdd00" : "rgba(255,255,255,0.6)" }}>
+                      <span>Lap {i + 1}</span>
+                      <span>{i === bestIdx ? "⚡ " : ""}{formatTime(t)}</span>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -212,10 +258,7 @@ export default function Race() {
                   onChange={(e) => setPlayerNameInput(e.target.value)}
                   maxLength={20}
                   className="px-4 py-2 rounded-lg text-white font-bold text-center outline-none"
-                  style={{
-                    background: "rgba(255,255,255,0.05)",
-                    border: `1px solid ${neon}60`,
-                  }}
+                  style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${neon}60` }}
                 />
                 <button
                   data-testid="button-submit-score"
@@ -228,15 +271,18 @@ export default function Race() {
                 </button>
               </div>
             ) : (
-              <div className="text-center text-green-400 font-bold">Score submitted!</div>
+              <div className="text-center font-bold" style={{ color: neon }}>
+                ✓ Score Submitted to Leaderboard
+              </div>
             )}
 
-            <div className="flex gap-3 mt-2">
+            <div className="flex gap-3">
               <button
                 data-testid="button-race-again"
                 onClick={() => {
                   setShowFinish(false);
                   setSubmitted(false);
+                  setXpReward(null);
                   carTRef.current = 0;
                   raceState.startCountdown();
                 }}

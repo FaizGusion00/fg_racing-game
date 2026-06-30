@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useGetLeaderboard } from "@workspace/api-client-react";
-import { TRACKS } from "@/game/trackData";
+import { TRACKS, DIFFICULTY_COLOR } from "@/game/trackData";
+import { usePlayerProfile, getLevelProgress, LEVEL_TITLES } from "@/game/usePlayerProfile";
 
 function formatTime(ms: number): string {
   if (!ms || ms <= 0) return "--:--.---";
@@ -15,9 +16,12 @@ export default function Menu() {
   const [, setLocation] = useLocation();
   const [playerName, setPlayerName] = useState("");
   const [selectedTrack, setSelectedTrack] = useState(TRACKS[0].id);
+  const { profile } = usePlayerProfile();
 
   const track = TRACKS.find((t) => t.id === selectedTrack) ?? TRACKS[0];
   const neon = track.neonColor;
+  const { progress: xpProgress } = getLevelProgress(profile);
+  const levelTitle = LEVEL_TITLES[profile.level] ?? "Rookie";
 
   const { data: leaderboard, isLoading } = useGetLeaderboard({
     trackId: selectedTrack,
@@ -26,6 +30,8 @@ export default function Menu() {
 
   const handleStart = () => {
     if (!playerName.trim()) return;
+    const t = TRACKS.find((t) => t.id === selectedTrack)!;
+    if (t.unlockLevel > profile.level) return;
     setLocation(
       `/race?track=${encodeURIComponent(selectedTrack)}&player=${encodeURIComponent(playerName.trim())}`
     );
@@ -44,39 +50,64 @@ export default function Menu() {
           backgroundSize: "40px 40px",
         }}
       />
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-10" style={{ background: neon }} />
+      <div className="absolute bottom-1/4 right-1/4 w-64 h-64 rounded-full blur-3xl opacity-10" style={{ background: neon }} />
 
-      {/* Glow orbs */}
-      <div
-        className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-10"
-        style={{ background: neon }}
-      />
-      <div
-        className="absolute bottom-1/4 right-1/4 w-64 h-64 rounded-full blur-3xl opacity-10"
-        style={{ background: neon }}
-      />
+      <div className="relative z-10 w-full max-w-xl flex flex-col gap-6">
 
-      <div className="relative z-10 w-full max-w-lg flex flex-col gap-8">
+        {/* Player Profile Card */}
+        <div
+          className="rounded-2xl p-4 flex items-center gap-4"
+          style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}
+        >
+          {/* Level badge */}
+          <div
+            className="w-14 h-14 rounded-xl flex flex-col items-center justify-center flex-shrink-0 font-black"
+            style={{ background: `${neon}20`, border: `2px solid ${neon}60` }}
+          >
+            <span className="text-xs text-gray-400 uppercase" style={{ fontSize: "9px", letterSpacing: "0.1em" }}>LVL</span>
+            <span className="text-2xl leading-tight" style={{ color: neon }}>{profile.level}</span>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline justify-between mb-1">
+              <span className="text-white font-bold text-sm">{levelTitle}</span>
+              <span className="text-gray-500 text-xs">{profile.xp} XP</span>
+            </div>
+            {/* XP progress bar */}
+            <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+              <div
+                className="h-full rounded-full transition-all duration-700"
+                style={{
+                  width: `${Math.round(xpProgress * 100)}%`,
+                  background: `linear-gradient(90deg, ${neon}aa, ${neon})`,
+                  boxShadow: `0 0 8px ${neon}80`,
+                }}
+              />
+            </div>
+            <div className="flex justify-between mt-1">
+              <span className="text-gray-500 text-xs">{profile.totalRaces} races</span>
+              <span className="text-xs" style={{ color: neon + "99" }}>
+                {profile.level < 20 ? `Next level: ${Math.round(xpProgress * 100)}%` : "MAX LEVEL"}
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* Title */}
         <div className="text-center">
           <h1
-            className="text-6xl font-black uppercase tracking-[0.2em] mb-2"
-            style={{
-              color: neon,
-              textShadow: `0 0 30px ${neon}, 0 0 80px ${neon}60`,
-            }}
+            className="text-6xl font-black uppercase tracking-[0.2em] mb-1"
+            style={{ color: neon, textShadow: `0 0 30px ${neon}, 0 0 80px ${neon}60` }}
           >
             APEX RUSH
           </h1>
-          <p className="text-gray-400 text-sm uppercase tracking-widest">
-            Futuristic Racing
-          </p>
+          <p className="text-gray-400 text-xs uppercase tracking-widest">Futuristic Racing</p>
         </div>
 
-        {/* Player name */}
+        {/* Pilot name */}
         <div className="flex flex-col gap-2">
-          <label className="text-xs text-gray-400 uppercase tracking-widest">
-            Pilot Name
-          </label>
+          <label className="text-xs text-gray-400 uppercase tracking-widest">Pilot Name</label>
           <input
             data-testid="input-player-name"
             value={playerName}
@@ -95,29 +126,54 @@ export default function Menu() {
 
         {/* Track selection */}
         <div className="flex flex-col gap-3">
-          <label className="text-xs text-gray-400 uppercase tracking-widest">
-            Select Track
-          </label>
+          <label className="text-xs text-gray-400 uppercase tracking-widest">Select Track</label>
           <div className="grid grid-cols-2 gap-3">
-            {TRACKS.map((t) => (
-              <button
-                key={t.id}
-                data-testid={`button-track-${t.id}`}
-                onClick={() => setSelectedTrack(t.id)}
-                className="py-4 px-4 rounded-xl font-bold text-sm uppercase tracking-widest transition-all"
-                style={{
-                  background:
-                    selectedTrack === t.id
-                      ? `${t.neonColor}22`
-                      : "rgba(255,255,255,0.03)",
-                  border: `2px solid ${selectedTrack === t.id ? t.neonColor : "rgba(255,255,255,0.1)"}`,
-                  color: selectedTrack === t.id ? t.neonColor : "rgba(255,255,255,0.5)",
-                  boxShadow: selectedTrack === t.id ? `0 0 20px ${t.neonColor}30` : "none",
-                }}
-              >
-                {t.name}
-              </button>
-            ))}
+            {TRACKS.map((t) => {
+              const locked = t.unlockLevel > profile.level;
+              const isSelected = selectedTrack === t.id;
+              const diffColor = DIFFICULTY_COLOR[t.difficulty];
+              return (
+                <button
+                  key={t.id}
+                  data-testid={`button-track-${t.id}`}
+                  onClick={() => { if (!locked) setSelectedTrack(t.id); }}
+                  disabled={locked}
+                  className="py-3 px-4 rounded-xl font-bold text-sm transition-all text-left relative overflow-hidden"
+                  style={{
+                    background: locked
+                      ? "rgba(255,255,255,0.02)"
+                      : isSelected ? `${t.neonColor}1a` : "rgba(255,255,255,0.03)",
+                    border: `2px solid ${locked ? "rgba(255,255,255,0.06)" : isSelected ? t.neonColor : "rgba(255,255,255,0.1)"}`,
+                    color: locked ? "rgba(255,255,255,0.2)" : isSelected ? t.neonColor : "rgba(255,255,255,0.6)",
+                    boxShadow: isSelected && !locked ? `0 0 20px ${t.neonColor}30` : "none",
+                    cursor: locked ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {/* Lock overlay */}
+                  {locked && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-xl"
+                      style={{ background: "rgba(0,0,0,0.5)" }}>
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-lg">🔒</span>
+                        <span className="text-xs font-bold" style={{ color: "rgba(255,255,255,0.4)" }}>
+                          Level {t.unlockLevel}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  <div className="font-black uppercase tracking-wide text-sm">{t.name}</div>
+                  <div className="text-xs mt-0.5 opacity-70">{t.description}</div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span
+                      className="text-xs font-black px-2 py-0.5 rounded"
+                      style={{ background: diffColor + "22", color: diffColor, border: `1px solid ${diffColor}50` }}
+                    >
+                      {t.difficulty}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -125,7 +181,7 @@ export default function Menu() {
         <button
           data-testid="button-start-race"
           onClick={handleStart}
-          disabled={!playerName.trim()}
+          disabled={!playerName.trim() || (TRACKS.find(t => t.id === selectedTrack)?.unlockLevel ?? 1) > profile.level}
           className="py-4 rounded-xl font-black text-xl uppercase tracking-widest transition-all"
           style={{
             background: playerName.trim() ? neon : "rgba(255,255,255,0.1)",
@@ -140,10 +196,7 @@ export default function Menu() {
         {/* Mini leaderboard */}
         <div
           className="rounded-xl p-5 flex flex-col gap-3"
-          style={{
-            background: "rgba(255,255,255,0.02)",
-            border: "1px solid rgba(255,255,255,0.08)",
-          }}
+          style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)" }}
         >
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-400 uppercase tracking-widest">
@@ -162,15 +215,12 @@ export default function Menu() {
           {isLoading ? (
             <div className="text-center py-3 text-gray-500 text-sm">Loading...</div>
           ) : !leaderboard || leaderboard.length === 0 ? (
-            <div className="text-center py-3 text-gray-500 text-sm">
-              No records yet. Be the first!
-            </div>
+            <div className="text-center py-3 text-gray-500 text-sm">No records yet. Be the first!</div>
           ) : (
             <div className="flex flex-col gap-2">
               {leaderboard.slice(0, 5).map((entry, i) => (
                 <div
                   key={entry.id}
-                  data-testid={`leaderboard-entry-${entry.id}`}
                   className="flex items-center gap-3 py-2 px-3 rounded-lg"
                   style={{
                     background: i === 0 ? `${neon}12` : "transparent",
@@ -183,13 +233,8 @@ export default function Menu() {
                   >
                     {i + 1}
                   </span>
-                  <span className="flex-1 font-bold text-sm text-white">
-                    {entry.playerName}
-                  </span>
-                  <span
-                    className="font-mono text-sm font-bold"
-                    style={{ color: neon }}
-                  >
+                  <span className="flex-1 font-bold text-sm text-white">{entry.playerName}</span>
+                  <span className="font-mono text-sm font-bold" style={{ color: neon }}>
                     {formatTime(entry.bestLapMs)}
                   </span>
                 </div>
